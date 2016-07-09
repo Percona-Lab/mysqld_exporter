@@ -109,6 +109,8 @@ var (
 		"Collect query response time distribution if query_response_time_stats is ON.")
 	collectEngineTokudbStatus = flag.Bool("collect.engine_tokudb_status", false,
 		"Collect from SHOW ENGINE TOKUDB STATUS")
+	collectProxySQLStatus = flag.Bool("collect.proxysql_status", false,
+		"Collect from SHOW MYSQL STATUS (on ProxySQL's admin port)")
 )
 
 // Metric name parts.
@@ -239,13 +241,15 @@ func (e *Exporter) scrape(ch chan<- prometheus.Metric) {
 	}
 	defer db.Close()
 
-	isUpRows, err := db.Query(upQuery)
-	if err != nil {
-		log.Errorln("Error pinging mysqld:", err)
-		e.mysqldUp.Set(0)
-		return
+	if !*collectProxySQLStatus {
+		isUpRows, err := db.Query(upQuery)
+		if err != nil {
+			log.Errorln("Error pinging mysqld:", err)
+			e.mysqldUp.Set(0)
+			return
+		}
+		isUpRows.Close()
 	}
-	isUpRows.Close()
 
 	e.mysqldUp.Set(1)
 
@@ -372,6 +376,12 @@ func (e *Exporter) scrape(ch chan<- prometheus.Metric) {
 			e.scrapeErrors.WithLabelValues("collect.engine_tokudb_status").Inc()
 		}
 	}
+	if *collectProxySQLStatus {
+		if err = collector.ScrapeProxysqlStatus(db, ch); err != nil {
+			log.Errorln("Error scraping ProxySQL status:", err)
+			e.scrapeErrors.WithLabelValues("collect.proxysql_status").Inc()
+		}
+	}
 }
 
 func parseMycnf(config interface{}) (string, error) {
@@ -403,6 +413,12 @@ func init() {
 
 func main() {
 	flag.Parse()
+	if *collectProxySQLStatus {
+		*collectTableSchema = false
+		*collectGlobalStatus = false
+		*collectGlobalVariables = false
+		*collectSlaveStatus = false
+	}
 
 	if *showVersion {
 		fmt.Fprintln(os.Stdout, version.Print("mysqld_exporter"))
