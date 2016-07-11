@@ -72,7 +72,6 @@ func ScrapeProxysqlStatus(db *sql.DB, ch chan<- prometheus.Metric) error {
 		activeTransactions := columnValue(scanArgs, proxysqlCols, "Active_Transactions")
 
 		for i, col := range proxysqlCols {
-			fmt.Println("Scraping ", col)
 			if value, ok := parseStatus(*scanArgs[i].(*sql.RawBytes)); ok { // Silently skip unparsable values.
 				ch <- prometheus.MustNewConstMetric(
 					prometheus.NewDesc(

@@ -110,12 +110,13 @@ func (d MySQLDriver) Open(dsn string) (driver.Conn, error) {
 	}
 
 	// Get max allowed packet size
-	maxap, err := mc.getSystemVar("max_allowed_packet")
-	if err != nil {
-		mc.Close()
-		return nil, err
-	}
-	mc.maxPacketAllowed = stringToInt(maxap) - 1
+//	maxap, err := mc.getSystemVar("max_allowed_packet")
+//	if err != nil {
+//		mc.Close()
+//		return nil, err
+//	}
+	//mc.maxPacketAllowed = stringToInt(maxap) - 1
+	mc.maxPacketAllowed = 10000 // harcoded to avoid proxysql error
 	if mc.maxPacketAllowed < maxPacketSize {
 		mc.maxWriteSize = mc.maxPacketAllowed
 	}
