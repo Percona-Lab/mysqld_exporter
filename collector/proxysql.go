@@ -24,12 +24,14 @@ func ScrapeProxysqlStatus(db *sql.DB, ch chan<- prometheus.Metric) error {
 	)
 	proxysqlRows, err = db.Query(fmt.Sprint(proxysqlQuery))
 	if err != nil {
+		fmt.Println("Error while getting proxysqlRows: ", err, ", proxysqlQuery was: ", fmt.Sprint(proxysqlQuery))
 		return err
 	}
 	defer proxysqlRows.Close()
 
 	proxysqlCols, err := proxysqlRows.Columns()
 	if err != nil {
+		fmt.Println("Error while getting proxysqlCols: ", err)
 		return err
 	}
 
@@ -41,29 +43,26 @@ func ScrapeProxysqlStatus(db *sql.DB, ch chan<- prometheus.Metric) error {
 		for i := range scanArgs {
 			scanArgs[i] = &sql.RawBytes{}
 		}
-		var varn string
-		var varv float64
-		if err := proxysqlRows.Scan(&varn, &varv); err != nil {
+
+		if err := proxysqlRows.Scan(scanArgs...); err != nil {
+			fmt.Println("Error while running proxysqlRows.Scan: ", err)
 			return err
 		}
 
-		if varn != "Client_Connections_created" &&
-			varn != "Client_Connections_connected" &&
-			varn != "Server_Connections_created" &&
-			varn != "Active_Transactions" {
-			continue
+		clientConnectionsCreated := columnValue(scanArgs, proxysqlCols, "Client_Connections_created")
+		clientConnectionsConnected := columnValue(scanArgs, proxysqlCols, "Client_Connections_connected")
+		serverConnectionsCreated := columnValue(scanArgs, proxysqlCols, "Server_Connections_created")
+		activeTransactions := columnValue(scanArgs, proxysqlCols, "Active_Transactions")
+
+		for i, col := range proxysqlCols {
+			if value, ok := parseStatus(*scanArgs[i].(*sql.RawBytes)); ok { // Silently skip unparsable values.
+				ch <- prometheus.MustNewConstMetric(
+					prometheus.NewDesc(proxysql, strings.ToLower(col), "Generic metric from SHOW GLOBAL STATUS. "),
+					prometheus.UntypedValue,
+					value,
+				)
+			}
 		}
-		ch <- prometheus.MustNewConstMetric(
-			prometheus.NewDesc(
-				prometheus.BuildFQName(namespace, proxysql, strings.ToLower(varn)),
-				"ProxySQL metric from SHOW MYSQL STATUS.",
-				[]string{varn},
-				nil,
-			),
-			prometheus.UntypedValue,
-			varv,
-			varn,
-		)
 	}
 	return nil
 }

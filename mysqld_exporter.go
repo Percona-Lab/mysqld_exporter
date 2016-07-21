@@ -401,7 +401,7 @@ func parseMycnf(config interface{}) (string, error) {
 	if socket != "" {
 		dsn = fmt.Sprintf("%s:%s@unix(%s)/", user, password, socket)
 	} else {
-		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/", user, password, host, port)
+		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/", "admin", "password", host, port) // hardcoded to test admin/admin
 	}
 	log.Debugln(dsn)
 	return dsn, nil
