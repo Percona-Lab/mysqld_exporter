@@ -29,40 +29,24 @@ func ScrapeProxysqlStatus(db *sql.DB, ch chan<- prometheus.Metric) error {
 	}
 	defer proxysqlRows.Close()
 
-	proxysqlCols, err := proxysqlRows.Columns()
-	if err != nil {
-		fmt.Println("Error while getting proxysqlCols: ", err)
-		return err
-	}
-
+	var (
+		vname string
+		vvalue float64 
+	)
+	
 	for proxysqlRows.Next() {
-		// As the number of columns varies with mysqld versions,
-		// and sql.Scan requires []interface{}, we need to create a
-		// slice of pointers to the elements of slaveData.
-		scanArgs := make([]interface{}, len(proxysqlCols))
-		for i := range scanArgs {
-			scanArgs[i] = &sql.RawBytes{}
-		}
-
-		if err := proxysqlRows.Scan(scanArgs...); err != nil {
+		if err := proxysqlRows.Scan(&vname, &vvalue); err != nil {
 			fmt.Println("Error while running proxysqlRows.Scan: ", err)
 			return err
 		}
-
-		clientConnectionsCreated := columnValue(scanArgs, proxysqlCols, "Client_Connections_created")
-		clientConnectionsConnected := columnValue(scanArgs, proxysqlCols, "Client_Connections_connected")
-		serverConnectionsCreated := columnValue(scanArgs, proxysqlCols, "Server_Connections_created")
-		activeTransactions := columnValue(scanArgs, proxysqlCols, "Active_Transactions")
-
-		for i, col := range proxysqlCols {
-			if value, ok := parseStatus(*scanArgs[i].(*sql.RawBytes)); ok { // Silently skip unparsable values.
-				ch <- prometheus.MustNewConstMetric(
-					prometheus.NewDesc(proxysql, strings.ToLower(col), "Generic metric from SHOW GLOBAL STATUS. "),
-					prometheus.UntypedValue,
-					value,
-				)
-			}
-		}
+		ch <- prometheus.MustNewConstMetric(
+			prometheus.NewDesc(
+				prometheus.BuildFQName(namespace, proxysql, vname), "Generic metric from SHOW MYSQL STATUS. ", []string{strings.ToLower(vname)}, nil,
+			),			
+			prometheus.UntypedValue,
+			vvalue,
+			vname,
+		)
 	}
 	return nil
 }
