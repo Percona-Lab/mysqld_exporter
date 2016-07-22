@@ -14,20 +14,30 @@ const (
 	proxysql = "proxysql"
 	// Query.
 	proxysqlQuery = `SHOW MYSQL STATUS`
+	// query for command counters
+	commandCountersQuery = `select Command, Total_Time_us, Total_cnt, cnt_100us, cnt_500us, cnt_1ms, cnt_5ms, cnt_10ms, cnt_50ms, cnt_100ms, cnt_500ms, cnt_1s, cnt_5s, cnt_10s, cnt_INFs from stats.stats_mysql_commands_counters` 
 )
 
 // ScrapeProxysqlstatus collects from `SHOW MYSQL STATUS`.
 func ScrapeProxysqlStatus(db *sql.DB, ch chan<- prometheus.Metric) error {
 	var (
 		proxysqlRows *sql.Rows
+		commandCountersRows *sql.Rows
 		err          error
 	)
-	proxysqlRows, err = db.Query(fmt.Sprint(proxysqlQuery))
+	
+	proxysqlRows, err = db.Query(fmt.Sprint(proxysqlQuery))	
 	if err != nil {
-		fmt.Println("Error while getting proxysqlRows: ", err, ", proxysqlQuery was: ", fmt.Sprint(proxysqlQuery))
 		return err
 	}
+	
+	commandCountersRows, err = db.Query(fmt.Sprint(commandCountersQuery))
+	if err != nil {
+		return err
+	}
+	
 	defer proxysqlRows.Close()
+	defer commandCountersRows.Close()
 
 	var (
 		vname string
@@ -36,7 +46,6 @@ func ScrapeProxysqlStatus(db *sql.DB, ch chan<- prometheus.Metric) error {
 	
 	for proxysqlRows.Next() {
 		if err := proxysqlRows.Scan(&vname, &vvalue); err != nil {
-			fmt.Println("Error while running proxysqlRows.Scan: ", err)
 			return err
 		}
 		ch <- prometheus.MustNewConstMetric(
@@ -47,6 +56,49 @@ func ScrapeProxysqlStatus(db *sql.DB, ch chan<- prometheus.Metric) error {
 			vvalue,
 			vname,
 		)
+	}
+	err = proxysqlRows.Err()
+	if err == nil {
+		proxysqlRows.Close()
+	}
+
+	cols, colerr := commandCountersRows.Columns()
+	if colerr != nil {
+		return colerr
+	}
+	counterVals := make([]interface{}, len(cols))
+	for i, _ := range cols {
+		counterVals[i] = new(sql.RawBytes)
+	}
+	
+	for commandCountersRows.Next() {
+		if err := commandCountersRows.Scan(counterVals...); err != nil {
+			return err
+		}
+		var command string
+		var metric float64
+		for i, _ := range counterVals {
+			switch t := counterVals[i].(type) {
+			case string:
+				command = counterVals[i].(string)
+			case float64:
+				metric = counterVals[i].(float64)
+			default:
+				_ = t
+				continue
+			}
+			if i > 1 {
+		    ch <- prometheus.MustNewConstMetric(
+			    prometheus.NewDesc(
+				    prometheus.BuildFQName(namespace, proxysql, command), "Generic metric from stats_mysql_commands_counter. ", []string{strings.ToLower(command)}, nil,
+			    ),			
+			    prometheus.UntypedValue,
+			    metric,
+			    cols[i],
+		    )
+			}
+		}
+
 	}
 	return nil
 }
