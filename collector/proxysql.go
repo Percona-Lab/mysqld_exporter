@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
 	"strings"
+	"strconv"
 )
 
 const (
@@ -68,7 +69,8 @@ func ScrapeProxysqlStatus(db *sql.DB, ch chan<- prometheus.Metric) error {
 	}
 	counterVals := make([]interface{}, len(cols))
 	for i, _ := range cols {
-		counterVals[i] = new(sql.RawBytes)
+		//counterVals[i] = new(sql.RawBytes)
+		counterVals[i] = new(string)
 	}
 	
 	for commandCountersRows.Next() {
@@ -78,19 +80,15 @@ func ScrapeProxysqlStatus(db *sql.DB, ch chan<- prometheus.Metric) error {
 		var command string
 		var metric float64
 		for i, _ := range counterVals {
-			switch t := counterVals[i].(type) {
-			case string:
-				command = counterVals[i].(string)
-			case float64:
-				metric = counterVals[i].(float64)
-			default:
-				_ = t
-				continue
+			if i == 0 {
+				command = *counterVals[i].(*string)
+			} else {
+				metric, _  = strconv.ParseFloat(*counterVals[i].(*string),64)
 			}
-			if i > 1 {
+			if i > 0 {
 		    ch <- prometheus.MustNewConstMetric(
 			    prometheus.NewDesc(
-				    prometheus.BuildFQName(namespace, proxysql, command), "Generic metric from stats_mysql_commands_counter. ", []string{strings.ToLower(command)}, nil,
+				    prometheus.BuildFQName(namespace, proxysql, fmt.Sprintf("%s_counter",command)), "Generic metric from stats_mysql_commands_counter. ", []string{strings.ToLower(command)}, nil,
 			    ),			
 			    prometheus.UntypedValue,
 			    metric,
